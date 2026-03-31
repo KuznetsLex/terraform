@@ -1,0 +1,4 @@
+cloud_id            = "<latinnumbers>"
+folder_id           = "latinnumbers"
+zone                = "ru-central1-a"
+ssh_public_key      = "ssh-ed25519 LoooolEtoPohojeNaElAaaaaaay"

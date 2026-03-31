@@ -1,0 +1,121 @@
+#cloud-config
+datasource:
+  Ec2:
+    strict_id: false
+
+ssh_pwauth: no
+
+users:
+  - name: ubuntu
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    shell: /bin/bash
+    groups: [docker]
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGx0sD2yeW8PINBO3OcW1IQ6Qky8+Xrl0XdeA9cvc7s1"
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDSNvrfK1WB+aNo7ABUwX/QuT3hR12ENN4EFlYxs/2BTPzwObh+wS+102ys1ffHHkmSFy1XPFpd1Kpyoo9TEy+HnPqzkNewk2lO1oMUfhpmp1ZaVfJ3q72sZAC4dtCSk4Lbw4Lp2BhUhD4XwuTRu5L3mSedB9D9eIl8weRp4Q6YvF5s/xZfW95XLRZ/1zEPsh+kDUj7LBCr9Y7jyK/8kNnBo3gxm2/q2YFY4D+4jC8dUYmcY0g2xKy3OXjNJVkS157f5cZNXXxJZuJt9+iuKgJgL6Lab96MnNa3BbWyiCMmWAobT5o1/AJB7s96sTyn9sR55jdj5l97Ze9WGZWQ9ZxADuNt6/t3CfWVxLRI1P6rk+XKAT+VHHcXZOr5wWK4wdgC2j241gdgwAO7vtCBxVTNii9r+kjgYdXLxgJgacYKe6j6Ky9m1q7qkg0V6xt44Nr8bVnpSvylXUxtMputtBBF09GFLcEO91yXjDVcUyX4DjLpckMqupU6G9VKRzhO1PkiJVFeC1ZjmwJfW2pywLl79oPzlP56np0m72r6gjJY+SDbiEHkaoaIR5WtPYciR4m0GlC7f2qwavfn2w8wRD93meL3QwaEA5d1EzT6PN5dPIpbqMY1X+NCiA6sSlZaMP60eViL5+NGabclUd0cXtzTv3VAzXulS2ZCdXNEGO6AdQ== kuznets.lex@gmail.com"
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - nginx
+
+write_files:
+  - path: "/etc/nginx/sites-available/default"
+    content: |
+      server {
+          listen 80 default_server;
+          listen [::]:80 default_server;
+          
+          root /var/www/html;
+          index index.html index.htm index.nginx-debian.html;
+          
+          server_name _;
+          
+          location / {
+              try_files $uri $uri/ =404;
+          }
+          
+          location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+          }
+      }
+    permissions: '0644'
+  
+  - path: "/var/www/html/index.html"
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Web Server</title>
+      </head>
+      <body>
+          <h1>Hello from Web Server!</h1>
+          <p>Hostname: $(hostname)</p>
+          <p>Server Time: $(date)</p>
+      </body>
+      </html>
+    permissions: '0644'
+
+  - path: "/usr/local/bin/install-docker.sh"
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+      
+      echo "Starting Docker installation..."
+      
+      # Remove old Docker versions
+      apt-get remove -y docker docker-engine docker.io containerd runc || true
+      
+      # Update package index
+      apt-get update
+      
+      # Install packages to allow apt to use a repository over HTTPS
+      apt-get install -y \
+          apt-transport-https \
+          ca-certificates \
+          curl \
+          gnupg \
+          lsb-release
+      
+      # Add Docker's official GPG key
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      
+      # Set up the stable repository
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+        $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      
+      # Update package index again
+      apt-get update
+      
+      # Install Docker Engine
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      
+      # Start and enable Docker service
+      systemctl start docker
+      systemctl enable docker
+      
+      # Add ubuntu user to docker group
+      usermod -aG docker ubuntu
+      
+      echo "Docker installation completed successfully!"
+
+runcmd:
+  - systemctl enable nginx
+  - systemctl start nginx
+  - sed -i "s/\$(hostname)/$(hostname)/g" /var/www/html/index.html
+  - sed -i "s/\$(date)/$(date)/g" /var/www/html/index.html
+  - /usr/local/bin/install-docker.sh
+  - docker run --rm hello-world
+  - echo "Setup completed successfully!" >> /var/log/cloud-init-output.log
+
+final_message: "The system is finally up, after $UPTIME seconds"

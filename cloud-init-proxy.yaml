@@ -1,0 +1,45 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+  - apache2-utils
+
+write_files:
+  - path: /etc/nginx/sites-available/proxy
+    content: |
+     server {
+      listen 80 default_server;
+      server_name _;
+
+      auth_basic "Restricted";
+      auth_basic_user_file /etc/nginx/.htpasswd;
+
+      location /health {
+          auth_basic off;
+          return 200 "OK\n";
+          add_header Content-Type text/plain;
+      }
+
+      location / {
+          proxy_pass http://${alb_endpoint};
+          proxy_set_header Host ${alb_endpoint};
+          proxy_http_version 1.1;
+          
+          proxy_connect_timeout 30s;
+          proxy_send_timeout 30s;
+          proxy_read_timeout 30s;
+      }
+     }
+
+runcmd:
+  - htpasswd -cb /etc/nginx/.htpasswd "${basic_auth_user}" "${basic_auth_password}"
+  
+  - rm -f /etc/nginx/sites-enabled/default
+  - rm -f /etc/nginx/sites-available/default
+  - ln -s /etc/nginx/sites-available/proxy /etc/nginx/sites-enabled/
+  - systemctl enable nginx
+  - systemctl restart nginx
+  
+final_message: "Nginx proxy is ready!"
